@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 
-<?import java.lang.*?>
-<?import java.util.*?>
-<?import javafx.scene.*?>
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
+<?import javafx.geometry.*?>
 
-<AnchorPane xmlns="http://javafx.com/javafx"
-            xmlns:fx="http://javafx.com/fxml"
-            fx:controller="$CONTROLLER_NAME$"
-            prefHeight="400.0" prefWidth="600.0" >
+<GridPane xmlns:fx="http://javafx.com/fxml"
+          fx:controller="com.ieee.pdfchecker.cp3.MainController"
+          alignment="center" hgap="10" vgap="10">
 
-</AnchorPane>
+    <Label text="IEEE PDF Compliance Checker" GridPane.columnIndex="0" GridPane.rowIndex="0"/>
+    <Button text="Select PDF" onAction="#handleFileSelection" GridPane.columnIndex="0" GridPane.rowIndex="1"/>
+    <Label fx:id="resultLabel" GridPane.columnIndex="0" GridPane.rowIndex="2"/>
+</GridPane>

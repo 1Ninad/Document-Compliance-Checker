@@ -1,16 +1,16 @@
 package com.ieee.pdfchecker.cp3;
 
+import java.io.File;
 
-public class RuleEngine {
-    public static boolean isFontCompliant(boolean fontCheck) {
-        return fontCheck;
-    }
+public class PdfChecker {
+        private final RuleEngine ruleEngine;
 
-    public static boolean isFontSizeCompliant(boolean fontSizeCheck) {
-        return fontSizeCheck;
-    }
+        public PdfChecker() {
+            this.ruleEngine = new RuleEngine();
+        }
 
-    public static boolean isAbstractCompliant(boolean abstractCheck) {
-        return abstractCheck;
-    }
+
+        public ComplianceReport analyzeFile(File file) {
+            return ruleEngine.checkCompliance(file);
+        }
 }
