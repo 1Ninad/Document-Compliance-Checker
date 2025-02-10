@@ -9,6 +9,8 @@ import javafx.scene.Parent;
 import java.io.IOException;
 import java.net.URL;
 
+import javafx.scene.control.ScrollPane;
+import javafx.scene.Parent;
 public class MainApp extends Application {
 
     @Override
@@ -20,8 +22,15 @@ public class MainApp extends Application {
             }
 
             Parent root = FXMLLoader.load(fxmlLocation);
+
+            // scrolling
+            ScrollPane scrollPane = new ScrollPane(root);
+            scrollPane.setFitToWidth(true);
+            scrollPane.setFitToHeight(true);
+
+            // window size
             primaryStage.setTitle("IEEE PDF Compliance Checker");
-            primaryStage.setScene(new Scene(root));
+            primaryStage.setScene(new Scene(scrollPane, 600, 600)); // Set default width & height
             primaryStage.show();
         } catch (IOException e) {
             e.printStackTrace();
@@ -34,6 +43,7 @@ public class MainApp extends Application {
         launch(args);
     }
 }
+
 
 // IEEE Format PDF: /Users/ninadkale/Downloads/conference-template.pdf
 // Springer: /Users/ninadkale/Downloads/Springer_Manuscript.pdf

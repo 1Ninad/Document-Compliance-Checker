@@ -2,7 +2,7 @@
 
 <?import javafx.scene.control.*?>
 <?import javafx.scene.layout.*?>
-<?import javafx.geometry.*?>
+
 
 <GridPane xmlns:fx="http://javafx.com/fxml"
           fx:controller="com.ieee.pdfchecker.cp3.MainController"
