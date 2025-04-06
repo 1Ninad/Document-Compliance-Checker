@@ -1,10 +1,15 @@
 package com.ieee.pdfchecker.cp3;
 
+import org.apache.pdfbox.contentstream.operator.Operator;
+import org.apache.pdfbox.cos.COSBase;
+import org.apache.pdfbox.cos.COSNumber;
 import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.text.PDFTextStripper;
+import org.apache.pdfbox.text.TextPosition;
 import java.io.File;
 import java.io.IOException;
+import org.apache.pdfbox.pdfparser.PDFStreamParser;
 
 import java.awt.geom.Rectangle2D;
 
@@ -19,6 +24,19 @@ import org.apache.pdfbox.text.TextPosition;
 
 import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+import com.itextpdf.kernel.pdf.PdfDocument;
+import com.itextpdf.kernel.pdf.PdfReader;
+import com.itextpdf.kernel.pdf.PdfPage;
+import com.itextpdf.kernel.pdf.canvas.parser.PdfCanvasProcessor;
+import com.itextpdf.kernel.pdf.canvas.parser.listener.IEventListener;
+import com.itextpdf.kernel.pdf.canvas.parser.data.IEventData;
+import com.itextpdf.kernel.pdf.canvas.parser.data.TextRenderInfo;
+import com.itextpdf.kernel.pdf.canvas.parser.EventType;
+import java.util.HashSet;
+import java.util.Arrays;
+import java.util.Set;
 
 
 public class RuleEngine {
@@ -27,26 +45,22 @@ public class RuleEngine {
         ComplianceReport report = new ComplianceReport(file.getName());
 
         try (PDDocument document = PDDocument.load(file)) {
-            // CALL PRIVATE METHODS:
-
-            //AMEY
-            //checkReferenceFontSize(document, report);
-
+            // CALL PVT METHODS:
 
             checkPageSize(document, report);
-            checkColumnFormat(document, report); // NOT WORKING
-            //checkColumnSpacing(document, report);
+
 
             // NINAD
             checkAbstractPresence(document, report);
             checkFont(document, report);
-            //checkTitleSize(document, report);
+            checkTitleFontSize(document, report);
+            checkColumnFormat(document, report);
 
 
             // PUSHKAR
             checkAbstractFormat(document, report);
             checkAuthorDetailsFormat(document, report);
-            //checkAuthorAffiliationFormat(document, report);
+            checkKeywordsFormat(document, report);
 
 
             // ANIKET
@@ -91,20 +105,89 @@ public class RuleEngine {
     }
 
     private void checkColumnFormat(PDDocument document, ComplianceReport report) throws IOException {
-        PDFTextStripper textStripper = new PDFTextStripper();
-        textStripper.setStartPage(1);
-        textStripper.setEndPage(1);
+        int numberOfPages = document.getNumberOfPages();
+        boolean overallCompliant = true;
+        float minCentroidSeparation = 50.0f;  // Minimum separation to treat as two distinct columns
 
-        String text = textStripper.getText(document);
-        if (text.contains("Authors") || text.contains("Affiliations")) {
-            int authorCount = text.split("\n").length;
+        for (int page = 1; page <= numberOfPages; page++) {
+            List<Float> firstWordPositions = new ArrayList<>();
 
-            if (authorCount <= 3) {
-                report.addInfo("Author affiliation section should have " + authorCount + " columns.");
+            // Custom stripper to capture the x-coordinate of the first text element of each line
+            PDFTextStripper stripper = new PDFTextStripper() {
+                @Override
+                protected void writeString(String text, List<TextPosition> textPositions) throws IOException {
+                    if (textPositions != null && !textPositions.isEmpty()) {
+                        firstWordPositions.add(textPositions.get(0).getXDirAdj());
+                    }
+                }
+            };
+
+            stripper.setStartPage(page);
+            stripper.setEndPage(page);
+            stripper.getText(document);
+
+            if (firstWordPositions.isEmpty()) {
+                report.addError("Page " + page + ": No text found.");
+                overallCompliant = false;
+                continue;
+            }
+
+            // Initialize centroids for k-means clustering (k=2) using the min and max x-positions
+            float centroid1 = Collections.min(firstWordPositions);
+            float centroid2 = Collections.max(firstWordPositions);
+
+            if (centroid1 == centroid2) {
+                report.addError("Page " + page + ": Column format not compliant, detected 1 column.");
+                overallCompliant = false;
+                continue;
+            }
+
+            // Perform simple 1D k-means clustering to group the positions into 2 clusters
+            List<Float> cluster1 = new ArrayList<>();
+            List<Float> cluster2 = new ArrayList<>();
+            for (int iter = 0; iter < 100; iter++) {
+                cluster1.clear();
+                cluster2.clear();
+                for (float pos : firstWordPositions) {
+                    if (Math.abs(pos - centroid1) <= Math.abs(pos - centroid2)) {
+                        cluster1.add(pos);
+                    } else {
+                        cluster2.add(pos);
+                    }
+                }
+                float newCentroid1 = cluster1.isEmpty() ? centroid1 : average(cluster1);
+                float newCentroid2 = cluster2.isEmpty() ? centroid2 : average(cluster2);
+                if (Math.abs(newCentroid1 - centroid1) < 0.01f && Math.abs(newCentroid2 - centroid2) < 0.01f) {
+                    centroid1 = newCentroid1;
+                    centroid2 = newCentroid2;
+                    break;
+                }
+                centroid1 = newCentroid1;
+                centroid2 = newCentroid2;
+            }
+
+            // Check if the centroids are sufficiently separated to be considered two distinct columns
+            if (Math.abs(centroid1 - centroid2) < minCentroidSeparation) {
+                report.addError("Page " + page + ": Column format not compliant, detected 1 column.");
+                overallCompliant = false;
             } else {
-                report.addInfo("Author affiliation section should have a max of 3 columns, with rows adjusted accordingly.");
+                report.addInfo("Page " + page + ": Column format compliant with 2 columns.");
             }
         }
+
+        if (overallCompliant) {
+            report.addInfo("Overall document column format compliant: two columns on every page.");
+        } else {
+            report.addError("Overall document column format not compliant.");
+        }
+    }
+
+    private float average(List<Float> list) {
+        float sum = 0;
+        for (float value : list) {
+            sum += value;
+        }
+        return sum / list.size();
     }
 
     private void checkColumnSpacing(PDDocument document, ComplianceReport report) {
@@ -135,6 +218,41 @@ public class RuleEngine {
             report.addError("Abstract section is missing");
         }
     }
+
+    private void checkTitleFontSize(PDDocument document, ComplianceReport report) throws IOException {
+        PDFTextStripper stripper = new PDFTextStripper() {
+            boolean titleCaptured = false;
+
+            @Override
+            protected void writeString(String lineText, List<TextPosition> textPositions) throws IOException {
+                if (titleCaptured) return;
+
+                String cleanedLine = lineText.trim();
+                if (!cleanedLine.isEmpty()) {
+                    float fontSize = textPositions.get(0).getFontSizeInPt(); // first word's font size
+                    String titleText = cleanedLine;
+
+                    if (fontSize >= 30.0f && fontSize <= 38.0f) {
+                        report.addInfo("Title font size — IEEE compliant (approx. 24 pt in MS Word)");
+                    } else {
+                        report.addError("Title font size is " + String.format("%.2f", fontSize) + " pt — Not IEEE compliant (expected ~24 pt)");
+                    }
+
+
+                    titleCaptured = true;
+                }
+            }
+        };
+
+        stripper.setStartPage(1);
+        stripper.setEndPage(1);
+        stripper.getText(document); // triggers line-by-line
+    }
+
+
+
+
+
 
 
     private void checkFont(PDDocument document, ComplianceReport report) {
@@ -168,44 +286,18 @@ public class RuleEngine {
         }
 
         if (!foundValidFont) {
-            report.addError("Times New Roman font NOT detected in the document");
+            report.addError("Times New Roman font not detected in the document");
         }
     }
 
 
-    private void checkTitleSize(PDDocument document, ComplianceReport report)  {
-        try {
-            PDPage firstPage = document.getPage(0);
-            PDResources resources = firstPage.getResources();
 
-            if (resources == null) {
-                report.addError("No resources found on the first page");
-                return;
-            }
-
-            Iterable<COSName> fontNamesIterable = resources.getFontNames();
-
-            for (COSName fontName : fontNamesIterable) {
-                PDFont font = resources.getFont(fontName);
-                if (font != null && font.getFontDescriptor() != null) {
-                    float fontSize = font.getFontDescriptor().getFontBoundingBox().getHeight() / 1000;
-
-                    if (fontSize >= 100) {
-                        return;
-                    }
-                }
-            }
-
-            report.addError("No text with font size 24PT found on first page");
-        } catch (IOException e) {
-            report.addError("Error reading font sizes: " + e.getMessage());
-        }
-    }
 
 
 
 
     // PUSHKAR
+    // WORKING
     private void checkAbstractFormat(PDDocument document, ComplianceReport report) throws IOException {
         PDFTextStripper textStripper = new PDFTextStripper();
         textStripper.setStartPage(1);
@@ -213,39 +305,49 @@ public class RuleEngine {
 
         String text = textStripper.getText(document);
         if (!text.toUpperCase().contains("ABSTRACT")) {
-            report.addError("Abstract section is missing.");
-        } else {
-            int startIndex = text.indexOf("ABSTRACT") + 8;
-            String remainingText = text.substring(startIndex).trim();
-            int wordCount = remainingText.split("\\s+").length;
-
-            if (wordCount < 100) {
-                report.addError("Abstract must be at least 100 words.");
-            }
+            report.addError("Abstract section is missing");
         }
+        else report.addInfo("Abstract section is present");
     }
 
+    // WORKING
     private void checkAuthorDetailsFormat(PDDocument document, ComplianceReport report) throws IOException {
         PDFTextStripper textStripper = new PDFTextStripper();
         textStripper.setStartPage(1);
         textStripper.setEndPage(1);
 
         String text = textStripper.getText(document);
-        if (!text.contains("Author") && !text.contains("Authors")) {
-            report.addError("Author details are missing.");
+
+        boolean hasSimpleName = Pattern.compile("\\b[A-Z][a-z]+ [A-Z][a-z]+\\b").matcher(text).find();
+        boolean hasAffiliation = text.toLowerCase().contains("department") || text.toLowerCase().contains("university");
+        boolean hasEmail = Pattern.compile("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+").matcher(text).find();
+
+        if (hasSimpleName && hasAffiliation) {
+            report.addInfo("Author details appear properly formatted — likely IEEE compliant.");
+        } else {
+            report.addError("Author details may be missing or incorrectly formatted — check name, affiliation, and structure.");
         }
     }
 
-    private void checkAuthorAffiliationFormat(PDDocument document, ComplianceReport report) throws IOException {
+
+    // NOT WORKING checkAuthorAffiliationFormat
+
+
+    // WORKING
+    private void checkKeywordsFormat(PDDocument document, ComplianceReport report) throws IOException {
         PDFTextStripper textStripper = new PDFTextStripper();
         textStripper.setStartPage(1);
-        textStripper.setEndPage(1);
+        textStripper.setEndPage(Math.min(2, document.getNumberOfPages()));
 
-        String text = textStripper.getText(document);
-        if (!text.contains("Affiliation")) {
-            report.addError("Author affiliation details are missing.");
+        String text = textStripper.getText(document).toLowerCase();
+        if (text.contains("keywords") || text.contains("index terms")) {
+            report.addInfo("Keywords section is present — IEEE compliant.");
+        } else {
+            report.addError("Keywords section is missing.");
         }
     }
+
+
 
 
 
@@ -268,20 +370,12 @@ public class RuleEngine {
             textStripper.getText(document);
 
             if (!foundAbstract.get()) {
-                report.addError("⚠️ 'Abstract' section NOT FOUND!");
-            } else if (!abstractIsValid.get()) {
-                report.addError("⚠️ 'Abstract' does NOT meet IEEE formatting rules!");
+                report.addError("Abstract section not found");
             } else {
-                report.addInfo("✅ 'Abstract' meets IEEE formatting rules.");
+                report.addInfo("Abstract is present");
             }
 
-            if (!foundIntroduction.get()) {
-                report.addError("⚠️ 'Introduction' section NOT FOUND!");
-            } else if (!introductionIsValid.get()) {
-                report.addError("⚠️ 'Introduction' does NOT meet IEEE formatting rules!");
-            } else {
-                report.addInfo("✅ 'Introduction' meets IEEE formatting rules.");
-            }
+
 
         } catch (IOException e) {
             report.addError("Error checking font formatting: " + e.getMessage());

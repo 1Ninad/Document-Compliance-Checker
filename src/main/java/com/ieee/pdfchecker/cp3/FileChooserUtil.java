@@ -1,6 +1,4 @@
 package com.ieee.pdfchecker.cp3;
-
-
 import javafx.stage.FileChooser;
 import javafx.stage.Stage;
 import java.io.File;
