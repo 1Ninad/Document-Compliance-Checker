@@ -1,5 +1,6 @@
 package com.ieee.pdfchecker.cp3;
 
+import com.itextpdf.kernel.pdf.*;
 import org.apache.pdfbox.contentstream.operator.Operator;
 import org.apache.pdfbox.cos.COSBase;
 import org.apache.pdfbox.cos.COSNumber;
@@ -7,6 +8,9 @@ import org.apache.pdfbox.pdmodel.PDDocument;
 import org.apache.pdfbox.pdmodel.PDPage;
 import org.apache.pdfbox.text.PDFTextStripper;
 import org.apache.pdfbox.text.TextPosition;
+
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
 import org.apache.pdfbox.pdfparser.PDFStreamParser;
@@ -26,9 +30,7 @@ import java.util.*;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
-import com.itextpdf.kernel.pdf.PdfDocument;
-import com.itextpdf.kernel.pdf.PdfReader;
-import com.itextpdf.kernel.pdf.PdfPage;
+
 import com.itextpdf.kernel.pdf.canvas.parser.PdfCanvasProcessor;
 import com.itextpdf.kernel.pdf.canvas.parser.listener.IEventListener;
 import com.itextpdf.kernel.pdf.canvas.parser.data.IEventData;
@@ -53,8 +55,8 @@ public class RuleEngine {
             // NINAD
             checkAbstractPresence(document, report);
             checkFont(document, report);
-            checkTitleFontSize(document, report);
             checkColumnFormat(document, report);
+            //checkTitleFontSize(document, report);
 
 
             // PUSHKAR
@@ -219,35 +221,73 @@ public class RuleEngine {
         }
     }
 
-    private void checkTitleFontSize(PDDocument document, ComplianceReport report) throws IOException {
-        PDFTextStripper stripper = new PDFTextStripper() {
-            boolean titleCaptured = false;
-
-            @Override
-            protected void writeString(String lineText, List<TextPosition> textPositions) throws IOException {
-                if (titleCaptured) return;
-
-                String cleanedLine = lineText.trim();
-                if (!cleanedLine.isEmpty()) {
-                    float fontSize = textPositions.get(0).getFontSizeInPt(); // first word's font size
-                    String titleText = cleanedLine;
-
-                    if (fontSize >= 30.0f && fontSize <= 38.0f) {
-                        report.addInfo("Title font size — IEEE compliant (approx. 24 pt in MS Word)");
-                    } else {
-                        report.addError("Title font size is " + String.format("%.2f", fontSize) + " pt — Not IEEE compliant (expected ~24 pt)");
-                    }
-
-
-                    titleCaptured = true;
-                }
-            }
-        };
-
-        stripper.setStartPage(1);
-        stripper.setEndPage(1);
-        stripper.getText(document); // triggers line-by-line
-    }
+//    private void checkTitleFontSize(PDDocument document, ComplianceReport report) throws IOException {
+//        PDPage firstPage = document.getPage(0);
+//        float pageHeight = firstPage.getMediaBox().getHeight();
+//
+//        class TitleCandidate {
+//            String text;
+//            float fontSize;
+//            float avgY;
+//
+//            TitleCandidate(String text, float fontSize, float avgY) {
+//                this.text = text;
+//                this.fontSize = fontSize;
+//                this.avgY = avgY;
+//            }
+//        }
+//
+//        List<TitleCandidate> candidates = new ArrayList<>();
+//
+//        PDFTextStripper stripper = new PDFTextStripper() {
+//            @Override
+//            protected void writeString(String text, List<TextPosition> textPositions) throws IOException {
+//                String cleanedLine = text.trim();
+//                if (!cleanedLine.isEmpty() && !textPositions.isEmpty()) {
+//                    float fontSize = textPositions.get(0).getFontSizeInPt();
+//                    float sumY = 0;
+//                    for (TextPosition tp : textPositions) {
+//                        sumY += tp.getY();
+//                    }
+//                    float avgY = sumY / textPositions.size();
+//                    candidates.add(new TitleCandidate(cleanedLine, fontSize, avgY));
+//                }
+//            }
+//        };
+//
+//        stripper.setStartPage(1);
+//        stripper.setEndPage(1);
+//        stripper.getText(document);
+//
+//        List<TitleCandidate> validCandidates = new ArrayList<>();
+//        for (TitleCandidate candidate : candidates) {
+//            if (candidate.avgY <= pageHeight * 0.9 && candidate.fontSize >= 30.0f && candidate.fontSize <= 38.0f) {
+//                validCandidates.add(candidate);
+//            }
+//        }
+//
+//        TitleCandidate chosen = null;
+//        if (!validCandidates.isEmpty()) {
+//            chosen = validCandidates.get(0);
+//            for (TitleCandidate candidate : validCandidates) {
+//                if (candidate.fontSize > chosen.fontSize) {
+//                    chosen = candidate;
+//                }
+//            }
+//        } else if (!candidates.isEmpty()) {
+//            chosen = candidates.get(0);
+//        }
+//
+//        if (chosen != null) {
+//            if (chosen.fontSize >= 30.0f && chosen.fontSize <= 38.0f) {
+//                report.addInfo("Title (" + chosen.text + ") font size — IEEE compliant (approx. 24 pt in MS Word)");
+//            } else {
+//                report.addError("Title (" + chosen.text + ") font size is " + String.format("%.2f", chosen.fontSize) + " pt — Not IEEE compliant (expected ~24 pt)");
+//            }
+//        } else {
+//            report.addError("Title text could not be detected on the first page.");
+//        }
+//    }
 
 
 
@@ -256,37 +296,47 @@ public class RuleEngine {
 
 
     private void checkFont(PDDocument document, ComplianceReport report) {
-        Set<String> allowedFonts = new HashSet<>(Arrays.asList(
-                "timesnewroman", "timesnewromanpsmt", "timesnewromanps-boldmt",
-                "timesnewromanps-italicmt", "timesnewromanps-bolditalicmt", "times-roman"
-        ));
         boolean foundValidFont = false;
-
-        for (PDPage page : document.getPages()) {
-            PDResources resources = page.getResources();
-            if (resources == null) continue;
-
-            Iterable<COSName> fontNamesIterable = resources.getFontNames();
-            for (COSName fontName : fontNamesIterable) {
-                try {
-                    PDFont font = resources.getFont(fontName);
-                    if (font != null) {
-                        String fontLower = font.getName().toLowerCase().replaceAll("\\s+", "");
-                        if (allowedFonts.contains(fontLower)) {
-                            foundValidFont = true;
-                            break;
-                        }
+        Set<String> detectedFonts = new HashSet<>();
+        try {
+            ByteArrayOutputStream outStream = new ByteArrayOutputStream();
+            document.save(outStream);
+            ByteArrayInputStream inStream = new ByteArrayInputStream(outStream.toByteArray());
+            PdfReader reader = new PdfReader(inStream);
+            PdfDocument pdfDoc = new PdfDocument(reader);
+            for (int i = 1; i <= pdfDoc.getNumberOfPages(); i++) {
+                PdfPage page = pdfDoc.getPage(i);
+                PdfDictionary resources = page.getPdfObject().getAsDictionary(PdfName.Resources);
+                if (resources == null) continue;
+                PdfDictionary fonts = resources.getAsDictionary(PdfName.Font);
+                if (fonts == null) continue;
+                for (PdfName fontKey : fonts.keySet()) {
+                    PdfDictionary fontDict = fonts.getAsDictionary(fontKey);
+                    if (fontDict == null) continue;
+                    PdfName baseFont = fontDict.getAsName(PdfName.BaseFont);
+                    if (baseFont == null) continue;
+                    String fontNameStr = baseFont.getValue();
+                    String cleanFontName = fontNameStr.contains("+") ? fontNameStr.substring(fontNameStr.indexOf("+") + 1) : fontNameStr;
+                    String normalizedFont = cleanFontName.toLowerCase().replaceAll("\\s+", "");
+                    detectedFonts.add(cleanFontName);
+                    if (normalizedFont.contains("times") && normalizedFont.contains("roman")) {
+                        foundValidFont = true;
+                        break;
                     }
-                } catch (IOException e) {
-                    report.addError("Error reading font metadata for: " + fontName.getName());
+                }
+                if (foundValidFont) {
+                    report.addInfo("Typeface (Times New Roman) is IEEE compliant.");
+                    break;
                 }
             }
-
-            if (foundValidFont) break;
+            pdfDoc.close();
+        } catch (Exception e) {
+            report.addError("Error checking font using iText: " + e.getMessage());
+            return;
         }
-
         if (!foundValidFont) {
-            report.addError("Times New Roman font not detected in the document");
+            String fontsList = String.join(", ", detectedFonts);
+            report.addError("Times New Roman font not detected in the document. Detected fonts: " + fontsList);
         }
     }
 
@@ -375,7 +425,15 @@ public class RuleEngine {
                 report.addInfo("Abstract is present");
             }
 
-
+            if (!foundIntroduction.get()) {
+                report.addError("Introduction section not found");
+            } else {
+                if (introductionIsValid.get()) {
+                    report.addInfo("Introduction section numbering is compliant");
+                } else {
+                    report.addError("Introduction section numbering is not compliant");
+                }
+            }
 
         } catch (IOException e) {
             report.addError("Error checking font formatting: " + e.getMessage());
@@ -394,7 +452,7 @@ public class RuleEngine {
 
         if (!foundIntroduction.get() && normalizedText.contains("introduction")) {
             foundIntroduction.set(true);
-            introductionIsValid.set(checkIntroductionFormatting(textPositions));
+            introductionIsValid.set(checkIntroductionFormatting(normalizedText));
         }
     }
 
@@ -419,20 +477,10 @@ public class RuleEngine {
         return isSize9pt && isBoldItalic && isJustified;
     }
 
-    private boolean checkIntroductionFormatting(List<TextPosition> textPositions) {
-        boolean isSize10pt = false;
-        boolean isJustified = isTextJustified(textPositions);
-
-        for (TextPosition position : textPositions) {
-            float fontSize = position.getFontSizeInPt();
-
-            if (fontSize == 10.0f) {
-                isSize10pt = true;
-                break;
-            }
-        }
-
-        return isSize10pt && isJustified;
+    private boolean checkIntroductionFormatting(String text) {
+        Pattern pattern = Pattern.compile("^\\s*((\\d+)|([ivxlcdm]+))[\\.\\)]?\\s+introduction\\b", Pattern.CASE_INSENSITIVE);
+        Matcher matcher = pattern.matcher(text);
+        return matcher.find();
     }
 
     private boolean isTextJustified(List<TextPosition> textPositions) {
