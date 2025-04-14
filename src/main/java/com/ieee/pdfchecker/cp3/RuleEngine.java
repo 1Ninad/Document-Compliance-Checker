@@ -18,8 +18,6 @@ import org.apache.pdfbox.pdfparser.PDFStreamParser;
 import java.awt.geom.Rectangle2D;
 
 
-
-// NINAD
 import org.apache.pdfbox.pdmodel.font.PDFont;
 import org.apache.pdfbox.pdmodel.PDResources;
 import org.apache.pdfbox.pdmodel.PDPageTree;
@@ -57,15 +55,15 @@ public class RuleEngine {
             checkPageSize(document, report);
             checkAbstractPresence(document, report);
 
-            checkAbstractFormat(document, report);
             checkAuthorDetailsFormat(document, report);
-
             checkKeywordsFormat(document, report);
-            IntroNumbering(document, report); // few lines
 
+            IntroNumbering(document, report);
             // + JDBC
 
-            // Use ComplianceReport data to extract values
+
+
+            // compliance report data to extract values
             boolean abstractPresent = report.containsInfo("abstract");
             boolean fontCompliant = report.containsInfo("typeface"); // e.g., "Typeface (Times New Roman)"
             boolean columnFormatCompliant = report.containsInfo("column format compliant");
@@ -73,10 +71,8 @@ public class RuleEngine {
             boolean authorDetailsCompliant = report.containsInfo("author details appear properly formatted");
             boolean introNumberingValid = report.containsInfo("introduction section numbering is compliant");
 
-// Extract title (you can update this logic to extract from PDF later)
             String title = "Untitled"; // placeholder for now
 
-// Store in DB
             com.ieee.pdfchecker.db.DatabaseManager.insertComplianceLog(
                     file.getName(),
                     title,
@@ -88,22 +84,14 @@ public class RuleEngine {
                     introNumberingValid
             );
 
-
-
-
-
         } catch (IOException e) {
             report.addError("Error reading PDF: " + e.getMessage());
         }
-
-
-
-
         return report;
     }
 
 
-    // ANISH
+
     private void checkPageSize(PDDocument document, ComplianceReport report) {
         PDPageTree pages = document.getDocumentCatalog().getPages();
         for (PDPage page : pages) {
@@ -130,15 +118,18 @@ public class RuleEngine {
         }
     }
 
+
+
+
     private void checkColumnFormat(PDDocument document, ComplianceReport report) throws IOException {
         int numberOfPages = document.getNumberOfPages();
         boolean overallCompliant = true;
-        float minCentroidSeparation = 50.0f;  // Minimum separation to treat as two distinct columns
+        float minCentroidSeparation = 50.0f;  // Minimum separation to treat as 2 columns
 
         for (int page = 1; page <= numberOfPages; page++) {
             List<Float> firstWordPositions = new ArrayList<>();
 
-            // Custom stripper to capture the x-coordinate of the first text element of each line
+
             PDFTextStripper stripper = new PDFTextStripper() {
                 @Override
                 protected void writeString(String text, List<TextPosition> textPositions) throws IOException {
@@ -158,7 +149,7 @@ public class RuleEngine {
                 continue;
             }
 
-            // Initialize centroids for k-means clustering (k=2) using the min and max x-positions
+
             float centroid1 = Collections.min(firstWordPositions);
             float centroid2 = Collections.max(firstWordPositions);
 
@@ -168,7 +159,7 @@ public class RuleEngine {
                 continue;
             }
 
-            // Perform simple 1D k-means clustering to group the positions into 2 clusters
+
             List<Float> cluster1 = new ArrayList<>();
             List<Float> cluster2 = new ArrayList<>();
             for (int iter = 0; iter < 100; iter++) {
@@ -191,8 +182,6 @@ public class RuleEngine {
                 centroid1 = newCentroid1;
                 centroid2 = newCentroid2;
             }
-
-            // Check if the centroids are sufficiently separated to be considered two distinct columns
             if (Math.abs(centroid1 - centroid2) < minCentroidSeparation) {
                 report.addError("Page " + page + ": Column format not compliant, detected 1 column.");
                 overallCompliant = false;
@@ -218,8 +207,6 @@ public class RuleEngine {
 
 
 
-
-    // double
     private void checkAbstractPresence(PDDocument document, ComplianceReport report) throws IOException {
         PDFTextStripper textStripper = new PDFTextStripper();
         textStripper.setStartPage(1);
@@ -229,8 +216,8 @@ public class RuleEngine {
         if (!text.toUpperCase().contains("ABSTRACT")) {
             report.addError("Abstract section is missing");
         }
+        else report.addInfo("Abstract section is present");
     }
-
 
 
     private void checkFont(PDDocument document, ComplianceReport report) {
@@ -284,21 +271,8 @@ public class RuleEngine {
 
 
 
-    // PUSHKAR
-    // WORKING
-    private void checkAbstractFormat(PDDocument document, ComplianceReport report) throws IOException {
-        PDFTextStripper textStripper = new PDFTextStripper();
-        textStripper.setStartPage(1);
-        textStripper.setEndPage(Math.min(2, document.getNumberOfPages()));
 
-        String text = textStripper.getText(document);
-        if (!text.toUpperCase().contains("ABSTRACT")) {
-            report.addError("Abstract section is missing");
-        }
-        else report.addInfo("Abstract section is present");
-    }
 
-    // WORKING
     private void checkAuthorDetailsFormat(PDDocument document, ComplianceReport report) throws IOException {
         PDFTextStripper textStripper = new PDFTextStripper();
         textStripper.setStartPage(1);
@@ -318,10 +292,6 @@ public class RuleEngine {
     }
 
 
-
-
-
-    // WORKING
     private void checkKeywordsFormat(PDDocument document, ComplianceReport report) throws IOException {
         PDFTextStripper textStripper = new PDFTextStripper();
         textStripper.setStartPage(1);
@@ -339,7 +309,7 @@ public class RuleEngine {
 
 
 
-    // ANIKET
+
     private void IntroNumbering(PDDocument document, ComplianceReport report) {
         AtomicBoolean foundAbstract = new AtomicBoolean(false);
         AtomicBoolean foundIntroduction = new AtomicBoolean(false);
@@ -378,10 +348,6 @@ public class RuleEngine {
                              AtomicBoolean foundIntroduction, AtomicBoolean introductionIsValid) {
         String normalizedText = text.replaceAll("\\s+", " ").trim().toLowerCase();
 
-        if (!foundAbstract.get() && normalizedText.contains("abstract")) {
-            foundAbstract.set(true);
-            abstractIsValid.set(checkAbstractFormatting(textPositions));
-        }
 
         if (!foundIntroduction.get() && normalizedText.contains("introduction")) {
             foundIntroduction.set(true);
@@ -389,27 +355,6 @@ public class RuleEngine {
         }
     }
 
-    // DOUBLE
-    private boolean checkAbstractFormatting(List<TextPosition> textPositions) {
-        boolean isBoldItalic = false;
-        boolean isSize9pt = false;
-        boolean isJustified = isTextJustified(textPositions);
-
-        for (TextPosition position : textPositions) {
-            float fontSize = position.getFontSizeInPt();
-
-            if (fontSize == 9.0f) {
-                isSize9pt = true;
-            }
-
-            if (position.getFont().getName().toLowerCase().contains("bold") &&
-                    position.getFont().getName().toLowerCase().contains("italic")) {
-                isBoldItalic = true;
-            }
-        }
-
-        return isSize9pt && isBoldItalic && isJustified;
-    }
 
     private boolean checkIntroductionFormatting(String text) {
         Pattern pattern = Pattern.compile("^\\s*((\\d+)|([ivxlcdm]+))[\\.\\)]?\\s+introduction\\b", Pattern.CASE_INSENSITIVE);
