@@ -44,29 +44,49 @@ import java.util.Set;
 public class RuleEngine {
 
     public ComplianceReport checkCompliance(File file) {
+
         ComplianceReport report = new ComplianceReport(file.getName());
 
         try (PDDocument document = PDDocument.load(file)) {
-            // CALL PVT METHODS:
+
+            // METHODS:
+
+            checkFont(document, report);
+            checkColumnFormat(document, report); // longest
 
             checkPageSize(document, report);
-
-
-            // NINAD
             checkAbstractPresence(document, report);
-            checkFont(document, report);
-            checkColumnFormat(document, report);
-            //checkTitleFontSize(document, report);
 
-
-            // PUSHKAR
             checkAbstractFormat(document, report);
             checkAuthorDetailsFormat(document, report);
+
             checkKeywordsFormat(document, report);
+            IntroNumbering(document, report); // few lines
 
+            // + JDBC
 
-            // ANIKET
-            checkFontFormatting(document, report);
+            // Use ComplianceReport data to extract values
+            boolean abstractPresent = report.containsInfo("abstract");
+            boolean fontCompliant = report.containsInfo("typeface"); // e.g., "Typeface (Times New Roman)"
+            boolean columnFormatCompliant = report.containsInfo("column format compliant");
+            boolean keywordsPresent = report.containsInfo("keywords section is present");
+            boolean authorDetailsCompliant = report.containsInfo("author details appear properly formatted");
+            boolean introNumberingValid = report.containsInfo("introduction section numbering is compliant");
+
+// Extract title (you can update this logic to extract from PDF later)
+            String title = "Untitled"; // placeholder for now
+
+// Store in DB
+            com.ieee.pdfchecker.db.DatabaseManager.insertComplianceLog(
+                    file.getName(),
+                    title,
+                    abstractPresent,
+                    fontCompliant,
+                    columnFormatCompliant,
+                    keywordsPresent,
+                    authorDetailsCompliant,
+                    introNumberingValid
+            );
 
 
 
@@ -75,6 +95,8 @@ public class RuleEngine {
         } catch (IOException e) {
             report.addError("Error reading PDF: " + e.getMessage());
         }
+
+
 
 
         return report;
@@ -96,12 +118,14 @@ public class RuleEngine {
                     page.getMediaBox().getHeight()
             );
 
-            // A4 size - 595x842 points, US Letter - 612x792 points
             boolean isA4 = (pageSize.getWidth() == 595 && pageSize.getHeight() == 842);
             boolean isLetter = (pageSize.getWidth() == 612 && pageSize.getHeight() == 792);
 
             if (!isA4 && !isLetter) {
-                report.addError("Page size is incorrect. Must be A4 (595x842) or US Letter (612x792).");
+                report.addError("Page size is incorrect. Must be A4 (595x842) or US Letter (612x792)");
+            }
+            else {
+                report.addInfo("Page size is Compliant - A4 or US Letter");
             }
         }
     }
@@ -192,24 +216,10 @@ public class RuleEngine {
         return sum / list.size();
     }
 
-    private void checkColumnSpacing(PDDocument document, ComplianceReport report) {
-        float columnSpacing = 14.4f;
-        float maxSpacing = 18.72f;
-
-        double columnSpacingPoints = columnSpacing * 72;  // Convert from inches to points
-
-        if (columnSpacingPoints >= 14.4 && columnSpacingPoints <= 18.72) {
-            // ✅ Corrected range check
-        } else {
-            report.addError("Column spacing must be between 14.4 and 18.72 points.");
-        }
-
-    }
 
 
 
-
-    // NINAD
+    // double
     private void checkAbstractPresence(PDDocument document, ComplianceReport report) throws IOException {
         PDFTextStripper textStripper = new PDFTextStripper();
         textStripper.setStartPage(1);
@@ -220,78 +230,6 @@ public class RuleEngine {
             report.addError("Abstract section is missing");
         }
     }
-
-//    private void checkTitleFontSize(PDDocument document, ComplianceReport report) throws IOException {
-//        PDPage firstPage = document.getPage(0);
-//        float pageHeight = firstPage.getMediaBox().getHeight();
-//
-//        class TitleCandidate {
-//            String text;
-//            float fontSize;
-//            float avgY;
-//
-//            TitleCandidate(String text, float fontSize, float avgY) {
-//                this.text = text;
-//                this.fontSize = fontSize;
-//                this.avgY = avgY;
-//            }
-//        }
-//
-//        List<TitleCandidate> candidates = new ArrayList<>();
-//
-//        PDFTextStripper stripper = new PDFTextStripper() {
-//            @Override
-//            protected void writeString(String text, List<TextPosition> textPositions) throws IOException {
-//                String cleanedLine = text.trim();
-//                if (!cleanedLine.isEmpty() && !textPositions.isEmpty()) {
-//                    float fontSize = textPositions.get(0).getFontSizeInPt();
-//                    float sumY = 0;
-//                    for (TextPosition tp : textPositions) {
-//                        sumY += tp.getY();
-//                    }
-//                    float avgY = sumY / textPositions.size();
-//                    candidates.add(new TitleCandidate(cleanedLine, fontSize, avgY));
-//                }
-//            }
-//        };
-//
-//        stripper.setStartPage(1);
-//        stripper.setEndPage(1);
-//        stripper.getText(document);
-//
-//        List<TitleCandidate> validCandidates = new ArrayList<>();
-//        for (TitleCandidate candidate : candidates) {
-//            if (candidate.avgY <= pageHeight * 0.9 && candidate.fontSize >= 30.0f && candidate.fontSize <= 38.0f) {
-//                validCandidates.add(candidate);
-//            }
-//        }
-//
-//        TitleCandidate chosen = null;
-//        if (!validCandidates.isEmpty()) {
-//            chosen = validCandidates.get(0);
-//            for (TitleCandidate candidate : validCandidates) {
-//                if (candidate.fontSize > chosen.fontSize) {
-//                    chosen = candidate;
-//                }
-//            }
-//        } else if (!candidates.isEmpty()) {
-//            chosen = candidates.get(0);
-//        }
-//
-//        if (chosen != null) {
-//            if (chosen.fontSize >= 30.0f && chosen.fontSize <= 38.0f) {
-//                report.addInfo("Title (" + chosen.text + ") font size — IEEE compliant (approx. 24 pt in MS Word)");
-//            } else {
-//                report.addError("Title (" + chosen.text + ") font size is " + String.format("%.2f", chosen.fontSize) + " pt — Not IEEE compliant (expected ~24 pt)");
-//            }
-//        } else {
-//            report.addError("Title text could not be detected on the first page.");
-//        }
-//    }
-
-
-
-
 
 
 
@@ -325,7 +263,7 @@ public class RuleEngine {
                     }
                 }
                 if (foundValidFont) {
-                    report.addInfo("Typeface (Times New Roman) is IEEE compliant.");
+                    report.addInfo("Typeface (Times New Roman) is Compliant.");
                     break;
                 }
             }
@@ -373,14 +311,14 @@ public class RuleEngine {
         boolean hasEmail = Pattern.compile("[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+").matcher(text).find();
 
         if (hasSimpleName && hasAffiliation) {
-            report.addInfo("Author details appear properly formatted — likely IEEE compliant.");
+            report.addInfo("Author details are properly formatted — Compliant");
         } else {
             report.addError("Author details may be missing or incorrectly formatted — check name, affiliation, and structure.");
         }
     }
 
 
-    // NOT WORKING checkAuthorAffiliationFormat
+
 
 
     // WORKING
@@ -391,7 +329,7 @@ public class RuleEngine {
 
         String text = textStripper.getText(document).toLowerCase();
         if (text.contains("keywords") || text.contains("index terms")) {
-            report.addInfo("Keywords section is present — IEEE compliant.");
+            report.addInfo("Keywords section is present — Compliant.");
         } else {
             report.addError("Keywords section is missing.");
         }
@@ -402,7 +340,7 @@ public class RuleEngine {
 
 
     // ANIKET
-    private void checkFontFormatting(PDDocument document, ComplianceReport report) {
+    private void IntroNumbering(PDDocument document, ComplianceReport report) {
         AtomicBoolean foundAbstract = new AtomicBoolean(false);
         AtomicBoolean foundIntroduction = new AtomicBoolean(false);
         AtomicBoolean abstractIsValid = new AtomicBoolean(false);
@@ -419,11 +357,6 @@ public class RuleEngine {
 
             textStripper.getText(document);
 
-            if (!foundAbstract.get()) {
-                report.addError("Abstract section not found");
-            } else {
-                report.addInfo("Abstract is present");
-            }
 
             if (!foundIntroduction.get()) {
                 report.addError("Introduction section not found");
@@ -456,6 +389,7 @@ public class RuleEngine {
         }
     }
 
+    // DOUBLE
     private boolean checkAbstractFormatting(List<TextPosition> textPositions) {
         boolean isBoldItalic = false;
         boolean isSize9pt = false;
@@ -494,7 +428,4 @@ public class RuleEngine {
 
         return avgSpacing < 2.0;
     }
-
-
-
 }

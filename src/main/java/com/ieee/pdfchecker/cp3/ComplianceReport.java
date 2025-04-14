@@ -14,6 +14,10 @@ public class ComplianceReport {
         this.infoMessages = new ArrayList<>();
     }
 
+    public boolean containsInfo(String keyword) {
+        return infoMessages.stream().anyMatch(msg -> msg.toLowerCase().contains(keyword.toLowerCase()));
+    }
+
     public void addError(String error) {
         errors.add(error);
     }
